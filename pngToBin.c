@@ -6,6 +6,62 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <inttypes.h>
+#include <stdarg.h>
+
+#define BUF_MAX 1024
+
+void die(const char *fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+	if (fmt) vfprintf(stderr, fmt, ap);
+	if (!fmt) fprintf(stderr, "Unknown error.\n");
+	va_end(ap);
+
+	if (fmt[0] && fmt[strlen(fmt)-1] == ':') {
+		fputc(' ', stderr);
+		perror(NULL);
+	}
+
+	exit(EXIT_FAILURE);
+}
+
+static char* pname;
+
+typedef struct {
+	bool o_flg;
+	char o_arg[BUF_MAX];
+} Options;
+Options opt = {
+	.o_flg = false
+};
+
+void usage() {
+	die("usage: %s input.png [-o output-file]\n", pname);
+}
+
+void make_base_name(char* arg, char* base_stripped) {
+
+	const char* sls = strrchr(arg, '/');
+	const char* base = sls ? sls + 1
+			       : arg;
+
+	const char* ext = strrchr(base, '.');
+	size_t base_len = ext ? (size_t) (ext - base)
+		              : (size_t) strlen(base);
+
+	memcpy(base_stripped, base, base_len);
+	base_stripped[base_len] = '\0';
+}
+
+void make_base_path(char* arg, char* base_path) {
+
+	const char* sls = strrchr(arg, '/');
+	size_t len = sls ? (size_t) (sls - arg) + 1
+			 : (size_t) 0;
+
+	memcpy(base_path, arg, len);
+	base_path[len] = '\0';
+}
 
 // png uses big-endian
 #define CHUNK_TYPE(i,j,k,l) ( (uint32_t) (l) << 24 | (uint32_t) (k) << 16 |	\
@@ -209,60 +265,66 @@ void write_stream_compressed(FILE* png, uint8_t* buffer) {
 	return;
 }
 
-void out_name_create(char** argv, char* out_name, size_t out_size) {
-
-	// compute base name (strip extension if present)
-	const char* dot = strrchr(argv[1], '.');
-	size_t base_len = dot ? (size_t)(dot - argv[1]) : strlen(argv[1]);
-
-	// copy base name to out_name and append ".bin"
-	char base[512];
-	if (base_len >= sizeof(base)) base_len = sizeof(base) - 1;
-	memcpy(base, argv[1], base_len);
-	base[base_len] = '\0';
-	snprintf(out_name, out_size, "%s.bin", base);
-}
-
 int main(int argc, char** argv) {
 
-	if (argc < 2) {
-		fprintf(stderr, "Usage: ./xpngToBin <input.png>\n");
-		exit(1);
+	pname = argv[0];
+	if (argc < 2) usage();
+
+	size_t arg = 2;
+	while (arg < argc) {
+		if (strncmp(argv[arg++], "-o", 2) == 0) {
+			opt.o_flg = true;
+			strcpy(opt.o_arg, argv[arg++]);
+		}
 	}
 
-	FILE* png = fopen(argv[1], "rb");
+	FILE* in_png = fopen(argv[1], "rb");
 
+	char base_name[BUF_MAX];
+	make_base_name(argv[1], base_name);
 
-	char out_name[1024];
-	out_name_create(argv, out_name, 1024);
+	char base_path[BUF_MAX];
+	make_base_path(argv[1], base_path);
 
-	FILE* out = fopen(out_name, "wb");
+	char out_path[BUF_MAX];
+	if (opt.o_flg) {
+		if (opt.o_arg[strlen(opt.o_arg)-1] != '/') {
+			snprintf(out_path, sizeof(out_path), "%s",
+				 opt.o_arg);
+		} else {
+			snprintf(out_path, sizeof(out_path), "%stexture_%s.bin",
+				 opt.o_arg, base_name);
+		}
 
-	signature_verify(png);
+	} else {
+		snprintf(out_path, sizeof(out_path), "%stexture_%s.bin",
+			 base_path, base_name);
+	}
+	FILE* out_bin = fopen(out_path, "wb");
+
+	signature_verify(in_png);
 
 	size_t chunks_idat_size = 0;
-	chunk_idat_number_calculate(png, &chunks_idat_size);
+	chunk_idat_number_calculate(in_png, &chunks_idat_size);
 
-	rewind(png);
-	signature_verify(png);
+	rewind(in_png);
+	signature_verify(in_png);
 
 	uint8_t* buffer = calloc((size_t) chunks_idat_size, 1);
-	write_stream_compressed(png, buffer);
-
-	//fwrite(buffer, 1, chunks_idat_size, out);
+	write_stream_compressed(in_png, buffer);
 
 	int rc = decompress_idat_and_write_rgba(buffer, chunks_idat_size,
             					ihdr.width, ihdr.height,
 						ihdr.bit_depth, ihdr.color_type,
-						out_name);
+						out_path);
 	if (rc != 0) {
 		fprintf(stderr, "Failed to decompress/unfilter: %d\n", rc);
 	}
 
 
 	free(buffer);
-	fclose(png);
-	fclose(out);
+	fclose(in_png);
+	fclose(out_bin);
 
 	return 0;
 }
