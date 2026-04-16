@@ -1,3 +1,5 @@
+// TODO: chunk selection for compressed stream is not very clean
+//       just save fp to first idat chunk on first occurence, see hack
 #include "ext.h"
 
 #include <stdio.h>
@@ -124,18 +126,20 @@ void signature_verify(FILE* png) {
 }
 
 /*
- *	Chunk layout:
- *  	 	|   Length  |  Chunk type  |    Chunk data    	|  CRC       |
- *    	  	|   4 bytes |  4 bytes     |    Length bytes  	|  4 bytes   |
- *
- *	The pointer into the file has to point to the beginnig of a chunk on
- *	function entry!
- *
- *      We return info about the chunk, ie. length, type and the CRC. Upon leaving
- * 	the function the pointer into the file points to the next chunk.
- *
- *      NO pointer to the chunk data is returned!
- */
+	=================================================================================
+	| Chunk layout:									|
+   	| 	|   Length  |  Chunk type  |    Chunk data    	|  CRC       |		|
+     	|  	|   4 bytes |  4 bytes     |    Length bytes  	|  4 bytes   |		|
+ 	|										|
+	| The pointer into the file has to point to the beginnig of a chunk on		|
+ 	| function entry!								|
+  	|										|
+        | We return info about the chunk, ie. length, type and the CRC. Upon leaving 	|
+  	| the function the pointer into the file points to the next chunk.		|
+ 	|										|
+        | NO pointer to the chunk data is returned!					|
+ 	=================================================================================
+*/
 Chunk chunk_get(FILE* png, size_t* chunk_current) {
 
 	Chunk res = {};
@@ -170,11 +174,8 @@ Chunk chunk_get(FILE* png, size_t* chunk_current) {
 	return res;
 }
 
-/*
- *	Upon entry the pointer into the file points to the first chunk after the IHDR.
- *      Upon exit the same is true.
- *
- */
+// Upon entry the pointer into the file points to the first chunk after the IHDR.
+// Upon exit the same is true.
 void ihdr_info_print(FILE* png, Chunk c) {
 
 		uint8_t ihdr_data[c.length];
@@ -308,7 +309,7 @@ int main(int argc, char** argv) {
 	chunk_idat_number_calculate(in_png, &chunks_idat_size);
 
 	rewind(in_png);
-	signature_verify(in_png);
+	signature_verify(in_png); // hack to skip to first idat chunk
 
 	uint8_t* buffer = calloc((size_t) chunks_idat_size, 1);
 	write_stream_compressed(in_png, buffer);
