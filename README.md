@@ -1,5 +1,5 @@
 ### Overview
-A small program that extract the raw pixel data from a .png file. 
+A small program that extract the raw pixel data from a .png file. For serious work use stb_image!
 
 ### Usage
 ```
